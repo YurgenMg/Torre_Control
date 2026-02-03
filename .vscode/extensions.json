@@ -1,0 +1,15 @@
+{
+  "recommendations": [
+    "esbenp.prettier-vscode",
+    "mtxr.sqltools",
+    "mtxr.sqltools-driver-pg",
+    "ms-vscode.remote-explorer",
+    "ms-azuretools.vscode-docker",
+    "GrapeCity.gc-excelviewer",
+    "mechatroner.rainbow-csv",
+    "yzhang.markdown-all-in-one",
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "charliermarsh.ruff"
+  ]
+}

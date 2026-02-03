@@ -1,0 +1,111 @@
+# =============================================================================
+# TORRE CONTROL - .gitignore
+# Professional Data Warehouse Project
+# =============================================================================
+
+# ==================== DATA FILES (Large, not for git) ====================
+# Raw data - regenerable from source
+Data/Raw/*.csv
+Data/Raw/*.xlsx
+Data/Raw/*.zip
+data/raw/*.csv
+data/raw/*.xlsx
+data/raw/*.zip
+
+# Processed data - regenerable from ETL pipeline
+Data/Processed/*.csv
+data/processed/*.csv
+
+# ==================== INFRASTRUCTURE ====================
+# Docker volumes and database files
+pgdata/
+docker_volumes/
+database_data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ==================== VIRTUAL ENVIRONMENTS ====================
+venv/
+env/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+.Python
+*.egg-info/
+dist/
+build/
+
+# ==================== PYTHON ====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg
+
+# ==================== IDE & EDITORS ====================
+.vscode/settings.json
+.vscode/launch.json
+.vscode/*.log
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ==================== LOGS & TEMPORARY FILES ====================
+logs/*.log
+logs/*.txt
+*.log
+*.bak
+*.tmp
+temp/
+.tmp/
+
+# ==================== JUPYTER ====================
+.ipynb_checkpoints
+*.ipynb
+
+# ==================== ENVIRONMENT & SECRETS ====================
+.env
+.env.local
+.env.*.local
+.env.production
+credentials.json
+secrets/
+
+# ==================== POWER BI ====================
+*.pbix~
+*.pbit~
+
+# ==================== OS ====================
+.DS_Store
+Thumbs.db
+.vscode-upload
+
+# Logs
+logs/
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+
+# Database backups
+*.sql.gz
+*.dump
+
+# VS Code extensions
+*.vsix
