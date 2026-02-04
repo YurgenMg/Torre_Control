@@ -233,7 +233,7 @@ def populate_dim_geography(engine):
                         }
                     )
                     insert_count += 1
-                except Exception as e:
+                except (SQLAlchemyError, IntegrityError) as e:
                     log(f"  ⚠️  Error inserting geography: {e}", "WARNING")
         
         log(f"✅ dim_geography: {insert_count:,} inserted", "INFO")
@@ -252,7 +252,7 @@ def populate_dim_geography(engine):
         
         return lookup_dict
         
-    except Exception as e:
+    except (SQLAlchemyError, KeyError, ValueError) as e:
         log(f"❌ Error in populate_dim_geography: {e}", "ERROR")
         raise
 
@@ -307,7 +307,7 @@ def populate_dim_product(engine):
                         }
                     )
                     insert_count += 1
-                except Exception as e:
+                except (SQLAlchemyError, IntegrityError, KeyError) as e:
                     log(f"  ⚠️  Error inserting product {row['product_card_id']}: {e}", "WARNING")
         
         log(f"✅ dim_product: {insert_count:,} inserted", "INFO")
@@ -320,7 +320,7 @@ def populate_dim_product(engine):
         
         return lookup_dict
         
-    except Exception as e:
+    except (SQLAlchemyError, KeyError, ValueError) as e:
         log(f"❌ Error in populate_dim_product: {e}", "ERROR")
         raise
 
@@ -394,7 +394,7 @@ def populate_dim_date(engine):
                         }
                     )
                     insert_count += 1
-                except Exception as e:
+                except (SQLAlchemyError, IntegrityError, ValueError) as e:
                     log(f"  ⚠️  Error inserting date {row['date_id']}: {e}", "WARNING")
         
         log(f"✅ dim_date: {insert_count:,} inserted", "INFO")
@@ -404,7 +404,7 @@ def populate_dim_date(engine):
         
         return lookup_dict
         
-    except Exception as e:
+    except (SQLAlchemyError, KeyError, ValueError) as e:
         log(f"❌ Error in populate_dim_date: {e}", "ERROR")
         raise
 
@@ -444,7 +444,9 @@ def populate_fact_orders(engine, customer_lookup, geography_lookup, product_look
             ), axis=1
         )
         df_facts["product_key"] = df_facts["product_card_id"].map(product_lookup)
-        df_facts["date_key"] = pd.to_datetime(df_facts["order_date"]).map(date_lookup)
+        
+        # Map date_key with proper datetime handling
+        df_facts["date_key"] = pd.to_datetime(df_facts["order_date"], errors="coerce").map(date_lookup)
         
         fk_nulls = {
             "customer_key": df_facts["customer_key"].isna().sum(),
@@ -470,6 +472,12 @@ def populate_fact_orders(engine, customer_lookup, geography_lookup, product_look
         df_facts_valid["is_otif"] = (df_facts_valid["late_delivery_risk"] == 0).astype(int)
         df_facts_valid["revenue_at_risk"] = df_facts_valid["sales"] * df_facts_valid["late_delivery_risk"]
         df_facts_valid["etl_run_id"] = etl_run_id
+        
+        # Validate numeric fields
+        numeric_fields = ["sales", "benefit_per_order", "order_item_total", 
+                         "order_item_profit_ratio", "order_item_discount_rate"]
+        for field in numeric_fields:
+            df_facts_valid[field] = pd.to_numeric(df_facts_valid[field], errors="coerce").fillna(0)
         
         anomalies = df_facts_valid[
             (df_facts_valid["days_for_shipping_real"] > 60) |
@@ -541,12 +549,13 @@ def populate_fact_orders(engine, customer_lookup, geography_lookup, product_look
                             "etl_run_id": row["etl_run_id"],
                         })
                         insert_count += 1
-                    except Exception as e:
+                    except (SQLAlchemyError, IntegrityError, KeyError, ValueError) as e:
                         log(f"  ❌ Insert failed: {e}", "ERROR")
         
         log(f"✅ fact_orders: {insert_count:,} inserted/updated", "INFO")
         
-        otif_pct = (df_facts_valid["is_otif"].sum() / len(df_facts_valid)) * 100
+        # Calculate metrics with division by zero protection
+        otif_pct = (df_facts_valid["is_otif"].sum() / len(df_facts_valid) * 100) if len(df_facts_valid) > 0 else 0.0
         revenue_at_risk = df_facts_valid["revenue_at_risk"].sum()
         
         log(f"  📈 OTIF%: {otif_pct:.2f}%", "INFO")
@@ -560,7 +569,7 @@ def populate_fact_orders(engine, customer_lookup, geography_lookup, product_look
             "revenue_at_risk": revenue_at_risk,
         }
         
-    except Exception as e:
+    except (SQLAlchemyError, KeyError, ValueError, TypeError) as e:
         log(f"❌ Error in populate_fact_orders: {e}", "ERROR")
         raise
 
@@ -588,6 +597,16 @@ def run_etl_pipeline():
     
     try:
         engine = get_db_connection()
+        
+        # Verify schema exists before starting
+        with engine.connect() as conn:
+            result = conn.execute(text(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema = 'dw' AND table_name = 'stg_raw_orders'"
+            ))
+            if result.scalar() == 0:
+                log("\u274c Error: stg_raw_orders table not found. Run load_data.py first.", "ERROR")
+                return 1
         
         customer_lookup = populate_dim_customer(engine)
         geography_lookup = populate_dim_geography(engine)
@@ -622,8 +641,11 @@ def run_etl_pipeline():
     except SQLAlchemyError as e:
         log(f"\n❌ Database error: {e}", "ERROR")
         return 1
+    except (KeyError, ValueError, TypeError) as e:
+        log(f"\n❌ Data processing error: {e}", "ERROR")
+        return 1
     except Exception as e:
-        log(f"\n❌ Unexpected error: {e}", "ERROR")
+        log(f"\n❌ Unexpected error: {type(e).__name__}: {e}", "ERROR")
         return 1
     finally:
         if engine:
