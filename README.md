@@ -75,29 +75,391 @@ Proyecto_TorreContol/
 ### Prerequisites
 
 #### System Requirements
+- **Python 3.9+** (with pip)
 - **Docker Desktop** (for PostgreSQL database)
 - **VS Code** with recommended extensions (see `.vscode/extensions.json`)
 - **Git** (for version control)
 
 #### Installation
 
-**Step 1: Install Docker Desktop**
-- Download from https://www.docker.com/products/docker-desktop
-- For Windows: Ensure WSL 2 is enabled
-
-**Step 2: Start the Development Environment**
-
-**Windows (PowerShell):**
-```powershell
-# Navigate to project directory
-cd Proyecto_TorreContol
-
-# Run setup script
-.\scripts\setup.ps1
-
-# Verify everything is running
-.\scripts\health-check.ps1
+**Step 1: Clone the Repository**
+```bash
+git clone https://github.com/YurgenMg/Torre_Control.git
+cd Torre_Control
 ```
+
+**Step 2: Install Dependencies**
+```bash
+# Install core dependencies
+make install
+
+# Or install with development tools
+make install-dev
+```
+
+**Step 3: Configure Environment**
+```bash
+# Copy example configuration
+cp config/.env.example .env
+
+# Edit .env with your settings (optional)
+# Default values work for local development
+```
+
+**Step 4: Start Database**
+```bash
+# Start PostgreSQL container
+make setup-docker
+```
+
+**Step 5: Run ETL Pipeline**
+```bash
+# Option 1: Run new modular pipeline (RECOMMENDED)
+make run-etl
+
+# Option 2: Run legacy pipeline
+make run
+```
+
+**Step 6: Export for Power BI**
+```bash
+# Export data in Parquet format
+make export-powerbi
+```
+
+---
+
+## 🏗️ Production-Ready Architecture
+
+### New Modular Structure (2026 Refactoring)
+
+```
+Torre_Control/
+├── src/
+│   ├── config.py                    # ✨ Pydantic settings management
+│   ├── logging_config.py            # ✨ Centralized logging
+│   └── etl/
+│       ├── extract.py               # ✨ DataExtractor class
+│       ├── transform.py             # ✨ DataTransformer class
+│       ├── load.py                  # ✨ DataLoader class
+│       ├── validate.py              # ✨ DataValidator class
+│       └── utils.py                 # ✨ Helper functions
+│
+├── scripts/
+│   ├── run_etl.py                   # ✨ ETL orchestrator
+│   ├── export_for_powerbi.py        # ✨ Parquet export utility
+│   ├── load_data.py                 # Legacy: CSV loading
+│   └── transform_data.py            # Legacy: Transformation
+│
+├── tests/
+│   ├── conftest.py                  # ✨ Pytest fixtures
+│   ├── test_extract.py              # ✨ Extraction tests
+│   ├── test_transform.py            # ✨ Transformation tests
+│   └── test_validate.py             # ✨ Validation tests
+│
+├── docs/
+│   ├── POWERBI_GUIDE.md             # ✨ Power BI connection guide
+│   └── guides/                      # Additional documentation
+│
+├── data/
+│   ├── raw/                         # Source CSV files (gitignored)
+│   └── processed/                   # Exported Parquet/CSV (gitignored)
+│
+├── config/
+│   ├── .env.example                 # Environment configuration template
+│   └── docker-compose.yml           # PostgreSQL container setup
+│
+├── Makefile                         # ✨ Updated automation commands
+├── requirements.txt                 # ✨ Updated core dependencies
+├── requirements-dev.txt             # ✨ Development dependencies
+└── .env                             # Local configuration (gitignored)
+```
+
+✨ = New/Updated in 2026 refactoring
+
+### Key Improvements
+
+#### 1. **Configuration Management**
+- **Pydantic v2** settings with validation
+- **Environment variables** via `.env` file
+- **Type-safe** configuration access
+
+```python
+from src.config import get_settings
+
+settings = get_settings()
+db_url = settings.database_url  # Type-safe, validated
+```
+
+#### 2. **Centralized Logging**
+- **Consistent** logging across all modules
+- **File and console** handlers
+- **Execution time** tracking decorator
+
+```python
+from src.logging_config import get_logger, log_execution_time
+
+logger = get_logger(__name__)
+
+@log_execution_time
+def my_function():
+    logger.info("Processing data...")
+```
+
+#### 3. **Modular ETL Components**
+- **Separation of concerns**: Extract, Transform, Load, Validate
+- **Reusable classes** with dependency injection
+- **Testable** design with mocks/fixtures
+
+```python
+from src.etl.extract import DataExtractor
+from src.etl.load import DataLoader
+from src.etl.transform import DataTransformer
+
+extractor = DataExtractor()
+loader = DataLoader()
+transformer = DataTransformer(loader=loader)
+
+df = extractor.extract_and_sanitize()
+loader.load_dataframe(df, "staging_table", schema="dw")
+transformer.transform_all()
+```
+
+#### 4. **Power BI Integration**
+- **Parquet export** for 10-50x faster loading
+- **DirectQuery support** for real-time dashboards
+- **Comprehensive guide** at `docs/POWERBI_GUIDE.md`
+
+```bash
+# Export optimized Parquet files
+make export-powerbi
+
+# Export specific tables
+python scripts/export_for_powerbi.py --tables dim_customer,fact_orders
+```
+
+#### 5. **Testing Infrastructure**
+- **Pytest** with fixtures and markers
+- **Unit and integration** tests
+- **Database mocking** for isolation
+
+```bash
+# Run all tests
+make test
+
+# Run only unit tests
+pytest -m unit
+
+# Run with coverage
+pytest --cov=src --cov-report=html
+```
+
+---
+
+## 📋 Available Commands
+
+### ETL Pipeline
+```bash
+make run-etl              # Run new modular ETL pipeline
+make export-powerbi       # Export data for Power BI (Parquet)
+make run                  # Run legacy pipeline (backwards compatible)
+```
+
+### Development
+```bash
+make install              # Install core dependencies
+make install-dev          # Install development dependencies
+make test                 # Run test suite
+make lint                 # Run code quality checks
+make format               # Auto-format code
+```
+
+### Database
+```bash
+make setup-docker         # Start PostgreSQL container
+make health               # Check system health
+make logs                 # View recent logs
+```
+
+### Cleanup
+```bash
+make clean                # Remove generated files
+make clean-all            # Full cleanup (includes Docker)
+```
+
+---
+
+## 🧪 Running Tests
+
+```bash
+# Run all tests
+pytest tests/
+
+# Run with verbose output
+pytest tests/ -v
+
+# Run specific test file
+pytest tests/test_extract.py
+
+# Run only unit tests
+pytest -m unit
+
+# Run with coverage report
+pytest --cov=src --cov-report=html
+
+# Skip slow tests
+pytest -m "not slow"
+
+# Skip database tests
+pytest -m "not database"
+```
+
+---
+
+## 📊 Power BI Integration
+
+### Quick Start
+
+1. **Run ETL Pipeline**
+```bash
+make run-etl
+```
+
+2. **Export Data**
+```bash
+make export-powerbi
+```
+
+3. **Connect Power BI**
+   - Open Power BI Desktop
+   - Get Data → Folder
+   - Select `data/processed/` directory
+   - Load Parquet files
+
+4. **Create Relationships**
+   - fact_orders → dim_customer (customer_id)
+   - fact_orders → dim_product (product_card_id)
+   - fact_orders → dim_geography (geography_key)
+   - fact_orders → dim_date (date_key)
+
+For detailed instructions, see **[Power BI Connection Guide](docs/POWERBI_GUIDE.md)**
+
+---
+
+## 🛠️ Configuration
+
+### Environment Variables
+
+Edit `.env` file to customize configuration:
+
+```bash
+# PostgreSQL Configuration
+POSTGRES_USER=admin
+POSTGRES_PASSWORD=adminpassword
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5433
+POSTGRES_DB=supply_chain_dw
+
+# Application Configuration
+ENVIRONMENT=development
+LOG_LEVEL=INFO
+
+# Data Loading Configuration
+CSV_FILE_PATH=data/raw/DataCoSupplyChainDataset.csv
+BATCH_SIZE=1000
+
+# Analytics Configuration
+OTIF_TARGET=95
+REVENUE_AT_RISK_THRESHOLD=1000000
+CHURN_RISK_LTV_THRESHOLD=50000
+```
+
+---
+
+## 📚 Documentation
+
+- **[Power BI Guide](docs/POWERBI_GUIDE.md)** - Complete Power BI integration
+- **[ETL Pipeline Guide](docs/guides/ETL_COMPLETE_PIPELINE.md)** - ETL architecture
+- **[Setup Guide](docs/guides/SETUP_GUIDE.md)** - Detailed setup instructions
+- **[Strategic Context](docs/guides/CONTEXTO_ESTRATEGICO.md)** - Business context
+
+---
+
+## 🤝 Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+
+---
+
+## 📝 License
+
+This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+## 🎯 Success Metrics
+
+After running the pipeline, you should see:
+
+✅ **Data Quality**
+- OTIF% calculated (target: >95%)
+- Revenue at risk identified
+- VIP customers at risk flagged
+- Geographic performance analyzed
+
+✅ **Technical**
+- All tests passing
+- Logs generated in `logs/etl.log`
+- Parquet files exported to `data/processed/`
+- Star schema populated in PostgreSQL
+
+✅ **Power BI Ready**
+- 5 dimension tables exported
+- 1 fact table with 186K+ rows
+- Relationships documented
+- DAX measures provided
+
+---
+
+## 🆘 Troubleshooting
+
+### Common Issues
+
+**Issue:** `ModuleNotFoundError: No module named 'pydantic'`
+```bash
+# Solution: Install dependencies
+make install
+```
+
+**Issue:** `Connection to PostgreSQL failed`
+```bash
+# Solution: Start Docker container
+make setup-docker
+
+# Check if running
+docker ps | grep postgres
+```
+
+**Issue:** `CSV file not found`
+```bash
+# Solution: Ensure raw data exists
+ls data/raw/DataCoSupplyChainDataset.csv
+```
+
+**Issue:** `Tests failing`
+```bash
+# Solution: Install development dependencies
+make install-dev
+
+# Run tests with verbose output
+pytest tests/ -v
+```
+
+For more issues, see [GitHub Issues](https://github.com/YurgenMg/Torre_Control/issues).
+
+---
+
+**Built with ❤️ by the Torre Control Engineering Team**
 
 **macOS/Linux (Bash):**
 ```bash
