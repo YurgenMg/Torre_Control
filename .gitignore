@@ -85,6 +85,11 @@ secrets/
 *.pbix~
 *.pbit~
 
+# Parquet files
+*.parquet
+data/processed/*.parquet
+Data/Processed/*.parquet
+
 # ==================== OS ====================
 .DS_Store
 Thumbs.db

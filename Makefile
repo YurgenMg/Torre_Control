@@ -2,7 +2,7 @@
 # Cross-platform automation for ETL pipeline
 # Usage: make help
 
-.PHONY: help install setup-docker run load-raw transform export validate health test lint format clean clean-all logs
+.PHONY: help install install-dev setup-docker run run-etl export-powerbi load-raw transform export validate health test lint format clean clean-all logs
 
 # Colors for output
 RED := \033[0;31m
@@ -18,14 +18,17 @@ help:
 	@echo ""
 	@echo "$(YELLOW)📦 SETUP & INSTALLATION$(NC)"
 	@echo "  $(GREEN)make install$(NC)         - Install Python dependencies (pip)"
+	@echo "  $(GREEN)make install-dev$(NC)     - Install development dependencies"
 	@echo "  $(GREEN)make setup-docker$(NC)    - Start PostgreSQL container"
 	@echo "  $(GREEN)make run$(NC)             - ⚡ RUN EVERYTHING (install→docker→load→transform→export→validate)"
+	@echo "  $(GREEN)make run-etl$(NC)         - ⚡ RUN NEW ETL PIPELINE (using orchestrator)"
 	@echo ""
 	@echo "$(YELLOW)🔄 ETL PIPELINE STEPS$(NC)"
 	@echo "  $(GREEN)make load-raw$(NC)        - Load CSV → PostgreSQL staging"
 	@echo "  $(GREEN)make validate-transform$(NC) - Pre-flight validation checks"
 	@echo "  $(GREEN)make transform$(NC)       - Transform → Star Schema"
 	@echo "  $(GREEN)make export$(NC)          - Export Star Schema → CSVs (Data/Processed/)"
+	@echo "  $(GREEN)make export-powerbi$(NC)  - Export data for Power BI (Parquet/CSV)"
 	@echo "  $(GREEN)make validate$(NC)        - Data quality checks"
 	@echo ""
 	@echo "$(YELLOW)🧪 TESTING & QUALITY$(NC)"
@@ -51,6 +54,11 @@ install:
 	python -m pip install --upgrade pip
 	pip install -r requirements.txt
 	@echo "$(GREEN)✅ Dependencies installed$(NC)"
+
+install-dev: install
+	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Installing development dependencies...$(NC)"
+	pip install -r requirements-dev.txt
+	@echo "$(GREEN)✅ Development dependencies installed$(NC)"
 
 setup-docker:
 	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Starting PostgreSQL container...$(NC)"
@@ -88,6 +96,20 @@ validate:
 	@echo "$(YELLOW)  - Calculating OTIF%$(NC)"
 	python scripts/load_data.py --validate-only
 	@echo "$(GREEN)✅ Data validation complete$(NC)"
+
+# ============================================================================
+# ETL ORCHESTRATION (NEW MODULAR PIPELINE)
+# ============================================================================
+
+run-etl: install setup-docker
+	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Running new modular ETL pipeline...$(NC)"
+	python scripts/run_etl.py
+	@echo "$(GREEN)✅ ETL pipeline complete$(NC)"
+
+export-powerbi:
+	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Exporting data for Power BI...$(NC)"
+	python scripts/export_for_powerbi.py --format parquet
+	@echo "$(GREEN)✅ Power BI export complete$(NC)"
 
 # ============================================================================
 # FULL PIPELINE (THE MAIN COMMAND)
