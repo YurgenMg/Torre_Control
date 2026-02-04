@@ -1,0 +1,8 @@
+mkdir -p src/etl
+mkdir -p tests/fixtures
+mkdir -p logs
+mkdir -p data/processed
+mkdir -p data/staging
+
+# Verifica creación
+ls -la src/ tests/

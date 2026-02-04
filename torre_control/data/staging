@@ -1,0 +1,21 @@
+src:
+total 0
+drwxr-xr-x  2 user user  4096 Feb  4 12:00 .
+drwxr-xr-x  3 user user  4096 Feb  4 12:00 ..
+drwxr-xr-x  2 user user  4096 Feb  4 12:00 etl
+
+tests:
+total 0
+drwxr-xr-x  2 user user  4096 Feb  4 12:00 .
+drwxr-xr-x  3 user user  4096 Feb  4 12:00 ..
+drwxr-xr-x  2 user user  4096 Feb  4 12:00 fixtures
+
+logs:
+total 0
+drwxr-xr-x  2 user user  4096 Feb  4 12:00 .
+
+data:
+total 0
+drwxr-xr-x  3 user user  4096 Feb  4 12:00 .
+drwxr-xr-x  2 user user  4096 Feb  4 12:00 processed
+drwxr-xr-x  2 user user  4096 Feb  4 12:00 staging

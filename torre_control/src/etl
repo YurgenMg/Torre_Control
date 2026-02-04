@@ -1,0 +1,9 @@
+# Crea la estructura base
+mkdir -p src/etl
+mkdir -p tests/fixtures
+mkdir -p logs
+mkdir -p data/processed
+mkdir -p data/staging
+
+# Verifica la creación
+ls -la src/ tests/
