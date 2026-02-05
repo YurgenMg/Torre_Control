@@ -26,7 +26,6 @@ DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://admin:adminpassword@local
 
 class TorreControlETLError(Exception):
     """Base exception para errores del pipeline ETL de Torre Control."""
-    pass
 
 class SQLScriptNotFoundError(TorreControlETLError):
     """El archivo SQL de transformación no existe."""

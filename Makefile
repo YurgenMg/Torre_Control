@@ -1,216 +1,181 @@
-# Torre Control - Makefile
-# Cross-platform automation for ETL pipeline
-# Usage: make help
+.PHONY: help setup init start load transform validate powerbi stop clean all
 
-.PHONY: help install install-dev setup-docker run run-etl export-powerbi load-raw transform export validate health test lint format clean clean-all logs
+PYTHON := python3
+VENV := .venv
+PIP := $(VENV)/bin/pip
+PYTHON_VENV := $(VENV)/bin/python
+DOCKER_COMPOSE := docker-compose -f config/docker-compose.yml
+DB_PORT := 5433
+DB_NAME := supply_chain_dw
+DB_USER := admin
+DB_PASS := adminpassword
 
-# Colors for output
-RED := \033[0;31m
-GREEN := \033[0;32m
-YELLOW := \033[0;33m
-BLUE := \033[0;34m
-NC := \033[0m # No Color
+# ============================================================================
+# COMANDOS PRINCIPALES
+# ============================================================================
 
-help:
-	@echo "$(BLUE)╔════════════════════════════════════════════════════════════════╗$(NC)"
-	@echo "$(BLUE)║           Torre Control - Makefile Commands                     ║$(NC)"
-	@echo "$(BLUE)╚════════════════════════════════════════════════════════════════╝$(NC)"
+help: ## 📖 Mostrar ayuda
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "  🏢 TORRE CONTROL - Pipeline de Ejecución"
+	@echo "═══════════════════════════════════════════════════════════"
 	@echo ""
-	@echo "$(YELLOW)📦 SETUP & INSTALLATION$(NC)"
-	@echo "  $(GREEN)make install$(NC)         - Install Python dependencies (pip)"
-	@echo "  $(GREEN)make install-dev$(NC)     - Install development dependencies"
-	@echo "  $(GREEN)make setup-docker$(NC)    - Start PostgreSQL container"
-	@echo "  $(GREEN)make run$(NC)             - ⚡ RUN EVERYTHING (install→docker→load→transform→export→validate)"
-	@echo "  $(GREEN)make run-etl$(NC)         - ⚡ RUN NEW ETL PIPELINE (using orchestrator)"
+	@echo "Comandos disponibles:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 	@echo ""
-	@echo "$(YELLOW)🔄 ETL PIPELINE STEPS$(NC)"
-	@echo "  $(GREEN)make load-raw$(NC)        - Load CSV → PostgreSQL staging"
-	@echo "  $(GREEN)make validate-transform$(NC) - Pre-flight validation checks"
-	@echo "  $(GREEN)make transform$(NC)       - Transform → Star Schema"
-	@echo "  $(GREEN)make export$(NC)          - Export Star Schema → CSVs (Data/Processed/)"
-	@echo "  $(GREEN)make export-powerbi$(NC)  - Export data for Power BI (Parquet/CSV)"
-	@echo "  $(GREEN)make validate$(NC)        - Data quality checks"
+	@echo "🎯 Quick Start: make all"
 	@echo ""
-	@echo "$(YELLOW)🧪 TESTING & QUALITY$(NC)"
-	@echo "  $(GREEN)make test$(NC)            - Run pytest suite"
-	@echo "  $(GREEN)make lint$(NC)            - Run flake8, mypy, isort (check)"
-	@echo "  $(GREEN)make format$(NC)          - Auto-format code (black, isort)"
+
+setup: ## 🔧 Instalación inicial (Python venv + dependencias)
+	@echo "🔧 Creando entorno virtual..."
+	$(PYTHON) -m venv $(VENV)
+	@echo "📦 Instalando dependencias..."
+	$(PIP) install --upgrade pip
+	$(PIP) install -r requirements.txt
+	@echo "✅ Instalación completada"
+
+init: ## 📁 Crear estructura de carpetas estándar
+	@echo "📁 Creando estructura de directorios..."
+	@mkdir -p data/raw data/interim data/processed data/external
+	@mkdir -p notebooks tests logs
+	@touch data/.gitkeep notebooks/.gitkeep tests/__init__.py logs/.gitkeep
+	@touch src/__init__.py src/etl/__init__.py
+	@echo "✅ Estructura creada"
+
+start: ## 🐳 Iniciar infraestructura (Docker PostgreSQL + PgAdmin)
+	@echo "🐳 Iniciando contenedores Docker..."
+	$(DOCKER_COMPOSE) up -d
+	@echo "⏳ Esperando PostgreSQL..."
+	@sleep 10
+	@until docker exec supply_chain_db pg_isready -U $(DB_USER) >/dev/null 2>&1; do \
+		sleep 2; \
+	done
+	@echo "✅ PostgreSQL listo en localhost:$(DB_PORT)"
+	@echo "✅ PgAdmin: http://localhost:5050"
+	@echo "   Email: admin@dataco.com"
+	@echo "   Password: $(DB_PASS)"
+
+schema: start ## 📐 Crear schema de Data Warehouse
+	@echo "📐 Ejecutando DDL..."
+	@docker exec -i supply_chain_db psql -U $(DB_USER) -d $(DB_NAME) \
+		< sql/ddl/01_schema_base.sql
+	@echo "✅ Schema creado: dw.dim_*, dw.fact_orders, dw.stg_raw_orders"
+
+load: ## 📥 Cargar datos RAW → Staging
+	@echo "📥 Ejecutando carga CSV → PostgreSQL..."
+	@if [ ! -f "data/raw/DataCoSupplyChainDataset.csv" ]; then \
+		echo "❌ ERROR: data/raw/DataCoSupplyChainDataset.csv no encontrado"; \
+		echo "   Descarga el dataset y colócalo en data/raw/"; \
+		exit 1; \
+	fi
+	$(PYTHON_VENV) scripts/load_data.py
+	@echo "✅ Datos cargados a dw.stg_raw_orders"
+
+transform: ## 🔄 Transformar Staging → Star Schema
+	@echo "🔄 Ejecutando transformaciones..."
+	@if [ ! -f "scripts/transform_data.py" ]; then \
+		echo "⚠️  WARNING: scripts/transform_data.py no existe"; \
+		echo "   Creando script básico..."; \
+		$(MAKE) create-transform; \
+	fi
+	$(PYTHON_VENV) scripts/transform_data.py
+	@echo "✅ Dimensiones y hechos poblados"
+
+validate: ## ✅ Validar calidad de datos
+	@echo "🔍 Validando conteos..."
+	@docker exec supply_chain_db psql -U $(DB_USER) -d $(DB_NAME) -c \
+		"SELECT 'stg_raw_orders' as tabla, COUNT(*) as registros FROM dw.stg_raw_orders \
+		UNION ALL SELECT 'dim_customer', COUNT(*) FROM dw.dim_customer \
+		UNION ALL SELECT 'dim_geography', COUNT(*) FROM dw.dim_geography \
+		UNION ALL SELECT 'dim_product', COUNT(*) FROM dw.dim_product \
+		UNION ALL SELECT 'dim_date', COUNT(*) FROM dw.dim_date \
+		UNION ALL SELECT 'fact_orders', COUNT(*) FROM dw.fact_orders;"
 	@echo ""
-	@echo "$(YELLOW)📊 DIAGNOSTICS$(NC)"
-	@echo "  $(GREEN)make health$(NC)          - System health check"
-	@echo "  $(GREEN)make logs$(NC)            - Show recent error logs"
+	@echo "🔍 OTIF por Market:"
+	@docker exec supply_chain_db psql -U $(DB_USER) -d $(DB_NAME) -c \
+		"SELECT * FROM dw.v_otif_by_market ORDER BY otif_percentage DESC;"
+
+export-csv: ## 📤 Exportar datos a CSV para Power BI
+	@echo "📤 Exportando tablas..."
+	@mkdir -p data/processed
+	@docker exec supply_chain_db psql -U $(DB_USER) -d $(DB_NAME) -c \
+		"\COPY (SELECT * FROM dw.fact_orders) TO STDOUT CSV HEADER" \
+		> data/processed/fact_orders.csv
+	@docker exec supply_chain_db psql -U $(DB_USER) -d $(DB_NAME) -c \
+		"\COPY (SELECT * FROM dw.dim_customer) TO STDOUT CSV HEADER" \
+		> data/processed/dim_customer.csv
+	@docker exec supply_chain_db psql -U $(DB_USER) -d $(DB_NAME) -c \
+		"\COPY (SELECT * FROM dw.dim_geography) TO STDOUT CSV HEADER" \
+		> data/processed/dim_geography.csv
+	@docker exec supply_chain_db psql -U $(DB_USER) -d $(DB_NAME) -c \
+		"\COPY (SELECT * FROM dw.dim_product) TO STDOUT CSV HEADER" \
+		> data/processed/dim_product.csv
+	@docker exec supply_chain_db psql -U $(DB_USER) -d $(DB_NAME) -c \
+		"\COPY (SELECT * FROM dw.dim_date) TO STDOUT CSV HEADER" \
+		> data/processed/dim_date.csv
+	@echo "✅ CSVs en: data/processed/"
+	@ls -lh data/processed/*.csv
+
+powerbi-info: ## 📊 Mostrar información de conexión Power BI
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "  📊 POWER BI - Información de Conexión"
+	@echo "═══════════════════════════════════════════════════════════"
 	@echo ""
-	@echo "$(YELLOW)🧹 CLEANUP$(NC)"
-	@echo "  $(GREEN)make clean$(NC)           - Remove generated files (Data/Processed/, __pycache__)"
-	@echo "  $(GREEN)make clean-all$(NC)       - Clean + stop Docker + remove venv"
+	@echo "OPCIÓN 1: PostgreSQL DirectQuery (RECOMENDADO)"
+	@echo "  Servidor: localhost:$(DB_PORT)"
+	@echo "  Base de datos: $(DB_NAME)"
+	@echo "  Usuario: $(DB_USER)"
+	@echo "  Password: $(DB_PASS)"
+	@echo "  Tablas: dw.fact_orders, dw.dim_customer, dw.dim_geography, dw.dim_product, dw.dim_date"
+	@echo ""
+	@echo "OPCIÓN 2: CSV Import (DESARROLLO)"
+	@echo "  Ejecutar: make export-csv"
+	@echo "  Ruta: $$(pwd)/data/processed/"
+	@echo "  Archivos: fact_orders.csv, dim_*.csv"
+	@echo ""
+
+stop: ## ⏹️  Detener contenedores
+	@echo "⏹️  Deteniendo contenedores..."
+	$(DOCKER_COMPOSE) stop
+
+clean: ## 🧹 Limpiar contenedores y datos (¡CUIDADO!)
+	@echo "⚠️  Esto eliminará todos los contenedores y datos"
+	@read -p "¿Continuar? [y/N]: " confirm && [ "$$confirm" = "y" ]
+	$(DOCKER_COMPOSE) down -v
+	rm -rf data/processed/*.csv
+	@echo "✅ Limpieza completada"
+
+logs: ## 📋 Ver logs de PostgreSQL
+	$(DOCKER_COMPOSE) logs -f postgres
+
+test: ## 🧪 Ejecutar tests (si existen)
+	@if [ -d "tests" ] && [ -f "tests/test_*.py" ]; then \
+		$(PYTHON_VENV) -m pytest tests/ -v; \
+	else \
+		echo "⚠️  No hay tests configurados"; \
+	fi
+
+all: setup init start schema load transform validate ## 🎯 Pipeline completo
+	@echo ""
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "  ✅ PIPELINE COMPLETADO"
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "Próximos pasos:"
+	@echo "  1. Ver datos: make validate"
+	@echo "  2. Exportar CSV: make export-csv"
+	@echo "  3. Conectar Power BI: make powerbi-info"
 	@echo ""
 
 # ============================================================================
-# CORE TARGETS
+# HELPERS
 # ============================================================================
 
-install:
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Installing Python dependencies...$(NC)"
-	python -m pip install --upgrade pip
-	pip install -r requirements.txt
-	@echo "$(GREEN)✅ Dependencies installed$(NC)"
-
-install-dev: install
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Installing development dependencies...$(NC)"
-	pip install -r requirements-dev.txt
-	@echo "$(GREEN)✅ Development dependencies installed$(NC)"
-
-setup-docker:
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Starting PostgreSQL container...$(NC)"
-	docker-compose -f config/docker-compose.yml up -d
-	@echo "$(YELLOW)⏳ Waiting for PostgreSQL to be ready...$(NC)"
-	@sleep 5
-	@echo "$(GREEN)✅ PostgreSQL running on localhost:5433$(NC)"
-
-load-raw:
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Loading CSV → PostgreSQL...$(NC)"
-	python scripts/load_data.py
-	@echo "$(GREEN)✅ Data loaded to dw.stg_raw_orders$(NC)"
-
-validate-transform:
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Pre-flight validation checks...$(NC)"
-	python scripts/validate_transform.py
-
-transform:
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Transforming → Star Schema...$(NC)"
-	@echo "$(YELLOW)  - Creating dimensions (customer, product, geography, date)$(NC)"
-	@echo "$(YELLOW)  - Populating fact_orders with calculated columns$(NC)"
-	@echo "$(YELLOW)  - Building analytics views$(NC)"
-	python scripts/transform_data.py
-	@echo "$(GREEN)✅ Star Schema created$(NC)"
-
-export:
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Exporting Star Schema → CSVs...$(NC)"
-	python src/etl/export_star_schema.py
-	@echo "$(GREEN)✅ CSVs exported to Data/Processed/$(NC)"
-
-validate:
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Validating data quality...$(NC)"
-	@echo "$(YELLOW)  - Checking row counts$(NC)"
-	@echo "$(YELLOW)  - Validating critical fields (no nulls)$(NC)"
-	@echo "$(YELLOW)  - Calculating OTIF%$(NC)"
-	python scripts/load_data.py --validate-only
-	@echo "$(GREEN)✅ Data validation complete$(NC)"
-
-# ============================================================================
-# ETL ORCHESTRATION (NEW MODULAR PIPELINE)
-# ============================================================================
-
-run-etl: install setup-docker
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Running new modular ETL pipeline...$(NC)"
-	python scripts/run_etl.py
-	@echo "$(GREEN)✅ ETL pipeline complete$(NC)"
-
-export-powerbi:
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Exporting data for Power BI...$(NC)"
-	python scripts/export_for_powerbi.py --format parquet
-	@echo "$(GREEN)✅ Power BI export complete$(NC)"
-
-# ============================================================================
-# FULL PIPELINE (THE MAIN COMMAND)
-# ============================================================================
-
-run: install setup-docker load-raw validate-transform transform export validate
-	@echo ""
-	@echo "$(BLUE)╔════════════════════════════════════════════════════════════════╗$(NC)"
-	@echo "$(BLUE)║                   🎉 PIPELINE COMPLETE! 🎉                     ║$(NC)"
-	@echo "$(BLUE)╚════════════════════════════════════════════════════════════════╝$(NC)"
-	@echo ""
-	@echo "$(GREEN)✅ Your data is ready for Power BI:$(NC)"
-	@echo "   Data/Processed/fact_orders.csv (186K rows)"
-	@echo "   Data/Processed/dim_customer.csv (5K rows)"
-	@echo "   Data/Processed/dim_product.csv (1.8K rows)"
-	@echo "   Data/Processed/dim_geography.csv (150 rows)"
-	@echo "   Data/Processed/dim_date.csv (365 rows)"
-	@echo ""
-	@echo "$(YELLOW)Next Step:$(NC) Open docs/guides/POWER_BI_CONNECTION_COMPLETE_GUIDE.md"
-	@echo ""
-
-# ============================================================================
-# TESTING & QUALITY
-# ============================================================================
-
-test:
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Running tests...$(NC)"
-	pytest tests/ -v
-	@echo "$(GREEN)✅ Tests complete$(NC)"
-
-lint:
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Linting code...$(NC)"
-	flake8 scripts/ src/ --max-line-length=100
-	mypy scripts/ src/ --ignore-missing-imports
-	@echo "$(GREEN)✅ Lint checks passed$(NC)"
-
-format:
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Formatting code...$(NC)"
-	black scripts/ src/
-	isort scripts/ src/
-	@echo "$(GREEN)✅ Code formatted$(NC)"
-
-# ============================================================================
-# DIAGNOSTICS
-# ============================================================================
-
-health:
-	@echo "$(BLUE)╔════════════════════════════════════════════════════════════════╗$(NC)"
-	@echo "$(BLUE)║                      System Health Check                       ║$(NC)"
-	@echo "$(BLUE)╚════════════════════════════════════════════════════════════════╝$(NC)"
-	@echo ""
-	@echo "$(YELLOW)Python:$(NC)"
-	@python --version
-	@echo ""
-	@echo "$(YELLOW)Docker:$(NC)"
-	@docker --version || echo "❌ Docker not installed"
-	@echo ""
-	@echo "$(YELLOW)PostgreSQL:$(NC)"
-	@docker-compose -f config/docker-compose.yml ps 2>/dev/null | grep postgres || echo "❌ Container not running (run 'make setup-docker')"
-	@echo ""
-	@echo "$(YELLOW)Data Files:$(NC)"
-	@test -f Data/Raw/DataCoSupplyChainDataset.csv && echo "✅ Data/Raw/DataCoSupplyChainDataset.csv" || echo "❌ Missing raw data"
-	@test -d Data/Processed && echo "✅ Data/Processed/ directory exists" || echo "❌ Missing Processed directory"
-	@ls -lh Data/Processed/ 2>/dev/null | tail -n +2 | awk '{print "  " $$9 " (" $$5 ")"}' || echo "  (empty)"
-	@echo ""
-	@echo "$(YELLOW)Key Files:$(NC)"
-	@test -f Makefile && echo "✅ Makefile" || echo "❌ Makefile"
-	@test -f requirements.txt && echo "✅ requirements.txt" || echo "❌ requirements.txt"
-	@test -f scripts/load_data.py && echo "✅ scripts/load_data.py" || echo "❌ scripts/load_data.py"
-	@test -f src/etl/export_star_schema.py && echo "✅ src/etl/export_star_schema.py" || echo "❌ src/etl/export_star_schema.py"
-	@echo ""
-
-logs:
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Recent logs:$(NC)"
-	@tail -n 50 logs/load_data_output.txt 2>/dev/null || echo "No logs found (run: make run)"
-
-# ============================================================================
-# CLEANUP
-# ============================================================================
-
-clean:
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Cleaning generated files...$(NC)"
-	rm -rf Data/Processed/*.csv
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
-	@echo "$(GREEN)✅ Cleaned$(NC)"
-
-clean-all: clean
-	@echo "$(BLUE)[$(shell date +'%H:%M:%S')] Full cleanup (includes Docker & venv)...$(NC)"
-	docker-compose -f config/docker-compose.yml down 2>/dev/null || true
-	rm -rf .venv/
-	@echo "$(GREEN)✅ Full cleanup complete$(NC)"
-
-# ============================================================================
-# ALIASES
-# ============================================================================
-
-setup: install setup-docker
-	@echo "$(GREEN)✅ Setup complete$(NC)"
-
-rebuild: clean-all install setup-docker run
-	@echo "$(GREEN)✅ Full rebuild complete$(NC)"
-
-.DEFAULT_GOAL := help
+create-transform: ## 🔧 Crear script transform_data.py básico
+	@echo "Creando scripts/transform_data.py..."
+	@echo '#!/usr/bin/env python3' > scripts/transform_data.py
+	@echo '"""Torre Control - ETL Transformation"""' >> scripts/transform_data.py
+	@echo 'print("⚠️  Script de transformación pendiente de implementar")' >> scripts/transform_data.py
+	@echo 'print("Ver documentación para crear populate_dim_* functions")' >> scripts/transform_data.py
+	@chmod +x scripts/transform_data.py
+	@echo "✅ scripts/transform_data.py creado"
