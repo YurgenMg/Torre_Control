@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """
-Transform Stage Layer to Star Schema (Dimensions + Facts)
+⚠️  DEPRECATED - Use scripts/transform_star_schema.py instead
+
+This pandas-based script has schema compatibility issues.
+The production pipeline now uses SQL for better performance and reliability.
+
+Transform Stage Layer to Star Schema (Dimensions + Facts) - LEGACY VERSION
 Purpose: Convert stg_raw_orders into dim_customer, dim_geography, dim_product, 
-         dim_date, and fact_orders with data quality validation.
+        dim_date, and fact_orders with data quality validation.
 
 Author: Data Engineering Team (Torre Control)
 Date: 2026-02-04
+Deprecated: 2026-02-04
 """
 
 import logging
@@ -102,7 +108,7 @@ def populate_dim_customer(engine):
             FROM dw.stg_raw_orders stg
             WHERE stg.customer_id IS NOT NULL
             GROUP BY stg.customer_id, stg.customer_fname, stg.customer_lname, 
-                     stg.customer_email, stg.customer_segment
+                    stg.customer_email, stg.customer_segment
         """
         
         with engine.connect() as conn:
@@ -110,14 +116,10 @@ def populate_dim_customer(engine):
         
         log(f"  📥 Read {len(df_customers):,} unique customers from staging", "INFO")
         
-        df_customers["customer_name"] = (
-            df_customers["customer_fname"].fillna("") + " " + 
-            df_customers["customer_lname"].fillna("")
-        ).str.strip()
-        
+        # Asegurarse de que los campos requeridos no sean nulos
         df_customers["sales_per_customer"] = df_customers["sales_per_customer"].astype(float)
         
-        critical_fields = ["customer_id", "customer_name"]
+        critical_fields = ["customer_id", "customer_fname", "customer_lname"]
         for field in critical_fields:
             null_count = df_customers[field].isna().sum()
             if null_count > 0:
@@ -130,29 +132,19 @@ def populate_dim_customer(engine):
             for _, row in tqdm(df_customers.iterrows(), total=len(df_customers), desc="  Inserting customers"):
                 upsert_query = text("""
                     INSERT INTO dw.dim_customer 
-                    (customer_id, customer_name, customer_email, 
-                     customer_segment, sales_per_customer, order_count)
-                    VALUES (:customer_id, :customer_name, :customer_email, 
-                            :customer_segment, :sales_per_customer, :order_count)
-                    ON CONFLICT (customer_id) 
-                    DO UPDATE SET 
-                        customer_name = EXCLUDED.customer_name,
-                        customer_email = EXCLUDED.customer_email,
-                        customer_segment = EXCLUDED.customer_segment,
-                        sales_per_customer = EXCLUDED.sales_per_customer,
-                        order_count = EXCLUDED.order_count
+                    (customer_id, fname, lname, segment)
+                    VALUES (:customer_id, :fname, :lname, :segment)
+                    ON CONFLICT (customer_key) DO NOTHING
                 """)
                 
                 try:
                     conn.execute(
                         upsert_query,
                         {
-                            "customer_id": row["customer_id"],
-                            "customer_name": row["customer_name"],
-                            "customer_email": row["customer_email"],
-                            "customer_segment": row["customer_segment"],
-                            "sales_per_customer": row["sales_per_customer"],
-                            "order_count": int(row["order_count"]),
+                            "customer_id": str(row["customer_id"]),
+                            "fname": row["customer_fname"],
+                            "lname": row["customer_lname"],
+                            "segment": row["customer_segment"]
                         }
                     )
                     insert_count += 1
@@ -289,21 +281,18 @@ def populate_dim_product(engine):
             for _, row in tqdm(df_products.iterrows(), total=len(df_products), desc="  Inserting products"):
                 upsert_query = text("""
                     INSERT INTO dw.dim_product 
-                    (product_id, product_name, category_name, department_name, product_price)
-                    VALUES (:product_id, :product_name, :category_name, :department_name, :product_price)
-                    ON CONFLICT (product_id) 
-                    DO NOTHING
+                    (product_id, product_name, category)
+                    VALUES (:product_id, :product_name, :category)
+                    ON CONFLICT (product_key) DO NOTHING
                 """)
                 
                 try:
                     conn.execute(
                         upsert_query,
                         {
-                            "product_id": row["product_card_id"],
+                            "product_id": str(row["product_card_id"]),
                             "product_name": row["product_name"],
-                            "category_name": row["category_name"],
-                            "department_name": row["department_name"],
-                            "product_price": float(row["product_price"]),
+                            "category": row["category_name"]
                         }
                     )
                     insert_count += 1
@@ -502,51 +491,19 @@ def populate_fact_orders(engine, customer_lookup, geography_lookup, product_look
                 for _, row in batch.iterrows():
                     upsert_query = text("""
                         INSERT INTO dw.fact_orders 
-                        (order_id, order_item_id, customer_key, geography_key, product_key, 
-                         date_key, sales, benefit_per_order, quantity, order_item_total, 
-                         profit_ratio, late_delivery_risk, days_real, days_scheduled, 
-                         delivery_status, discount_rate, is_otif, revenue_at_risk, etl_run_id)
-                        VALUES (:order_id, :order_item_id, :customer_key, :geography_key, :product_key, 
-                                :date_key, :sales, :benefit_per_order, :quantity, :order_item_total, 
-                                :profit_ratio, :late_delivery_risk, :days_real, :days_scheduled, 
-                                :delivery_status, :discount_rate, :is_otif, :revenue_at_risk, :etl_run_id)
-                        ON CONFLICT (order_id, order_item_id)
-                        DO UPDATE SET
-                            sales = EXCLUDED.sales,
-                            benefit_per_order = EXCLUDED.benefit_per_order,
-                            quantity = EXCLUDED.quantity,
-                            order_item_total = EXCLUDED.order_item_total,
-                            profit_ratio = EXCLUDED.profit_ratio,
-                            late_delivery_risk = EXCLUDED.late_delivery_risk,
-                            days_real = EXCLUDED.days_real,
-                            days_scheduled = EXCLUDED.days_scheduled,
-                            delivery_status = EXCLUDED.delivery_status,
-                            discount_rate = EXCLUDED.discount_rate,
-                            is_otif = EXCLUDED.is_otif,
-                            revenue_at_risk = EXCLUDED.revenue_at_risk
+                        (order_id, customer_key, product_key, geo_key, date_key, sales, late_delivery_risk)
+                        VALUES (:order_id, :customer_key, :product_key, :geo_key, :date_key, :sales, :late_delivery_risk)
                     """)
                     
                     try:
                         conn.execute(upsert_query, {
                             "order_id": str(row["order_id"]),
-                            "order_item_id": str(row["order_item_id"]),
                             "customer_key": int(row["customer_key"]),
-                            "geography_key": int(row["geography_key"]),
                             "product_key": int(row["product_key"]),
+                            "geo_key": int(row["geography_key"]),
                             "date_key": int(row["date_key"]),
                             "sales": float(row["sales"] or 0),
-                            "benefit_per_order": float(row["benefit_per_order"] or 0),
-                            "quantity": int(row["order_item_quantity"] or 0),
-                            "order_item_total": float(row["order_item_total"] or 0),
-                            "profit_ratio": float(row["order_item_profit_ratio"] or 0),
-                            "late_delivery_risk": int(row["late_delivery_risk"] or 0),
-                            "days_real": int(row["days_for_shipping_real"] or 0),
-                            "days_scheduled": int(row["days_for_shipment_scheduled"] or 0),
-                            "delivery_status": str(row["delivery_status"] or "UNKNOWN"),
-                            "discount_rate": float(row["order_item_discount_rate"] or 0),
-                            "is_otif": int(row["is_otif"]),
-                            "revenue_at_risk": float(row["revenue_at_risk"]),
-                            "etl_run_id": row["etl_run_id"],
+                            "late_delivery_risk": int(row["late_delivery_risk"] or 0)
                         })
                         insert_count += 1
                     except (SQLAlchemyError, IntegrityError, KeyError, ValueError) as e:
