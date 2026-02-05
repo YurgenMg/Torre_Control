@@ -167,7 +167,11 @@ def populate_dim_customer(engine):
 
 
 def populate_dim_geography(engine):
-    """Populate dim_geography from stg_raw_orders."""
+    """Populate dim_geography from stg_raw_orders.
+    
+    NOTE: Real schema only has (market, region, country) - not state/city
+    This version is simplified to match actual database schema.
+    """
     log("\n🔄 [2/5] Populating dim_geography...", "INFO")
     
     try:
@@ -175,9 +179,7 @@ def populate_dim_geography(engine):
             SELECT DISTINCT
                 stg.market,
                 stg.order_region as region,
-                stg.customer_country as country,
-                stg.customer_state as state,
-                stg.customer_city as city
+                stg.customer_country as country
             FROM dw.stg_raw_orders stg
             WHERE stg.market IS NOT NULL
         """
@@ -196,8 +198,6 @@ def populate_dim_geography(engine):
         
         df_geo["region"] = df_geo["region"].fillna("Unknown")
         df_geo["country"] = df_geo["country"].fillna("Unknown")
-        df_geo["state"] = df_geo["state"].fillna("Unknown")
-        df_geo["city"] = df_geo["city"].fillna("Unknown")
         
         log(f"  ✅ Validated {len(df_geo):,} geographic records", "INFO")
         
@@ -207,10 +207,9 @@ def populate_dim_geography(engine):
             for _, row in tqdm(df_geo.iterrows(), total=len(df_geo), desc="  Inserting geographies"):
                 upsert_query = text("""
                     INSERT INTO dw.dim_geography 
-                    (market, region, country, state, city)
-                    VALUES (:market, :region, :country, :state, :city)
-                    ON CONFLICT (market, region, country, state, city)
-                    DO NOTHING
+                    (market, region, country)
+                    VALUES (:market, :region, :country)
+                    ON CONFLICT (geo_key) DO NOTHING
                 """)
                 
                 try:
@@ -219,9 +218,7 @@ def populate_dim_geography(engine):
                         {
                             "market": row["market"],
                             "region": row["region"],
-                            "country": row["country"],
-                            "state": row["state"],
-                            "city": row["city"],
+                            "country": row["country"]
                         }
                     )
                     insert_count += 1
@@ -232,13 +229,13 @@ def populate_dim_geography(engine):
         
         with engine.connect() as conn:
             df_geo_lookup = pd.read_sql_query(
-                "SELECT market, region, country, state, city, geography_id FROM dw.dim_geography", conn
+                "SELECT market, region, country, geo_key FROM dw.dim_geography", conn
             )
         
         lookup_dict = {}
         for _, row in df_geo_lookup.iterrows():
-            key = (row["market"], row["region"], row["country"], row["state"], row["city"])
-            lookup_dict[key] = row["geography_id"]
+            key = (row["market"], row["region"], row["country"])
+            lookup_dict[key] = row["geo_key"]
         
         log(f"  📌 Geography lookup dict: {len(lookup_dict)} entries", "INFO")
         
@@ -315,7 +312,10 @@ def populate_dim_product(engine):
 
 
 def populate_dim_date(engine):
-    """Populate dim_date from stg_raw_orders."""
+    """Populate dim_date from stg_raw_orders.
+    
+    NOTE: Uses order_date_(dateorders) as actual column name in staging.
+    """
     log("\n🔄 [4/5] Populating dim_date...", "INFO")
     
     try:
@@ -323,10 +323,10 @@ def populate_dim_date(engine):
             result = conn.execute(
                 text("""
                     SELECT 
-                        MIN(stg.order_date) as min_date,
-                        MAX(stg.order_date) as max_date
+                        MIN(stg."order_date_(dateorders)") as min_date,
+                        MAX(stg."order_date_(dateorders)") as max_date
                     FROM dw.stg_raw_orders stg
-                    WHERE stg.order_date IS NOT NULL
+                    WHERE stg."order_date_(dateorders)" IS NOT NULL
                 """)
             )
             row = result.fetchone()
@@ -353,42 +353,39 @@ def populate_dim_date(engine):
         
         insert_count = 0
         
+        # Note: dim_date schema has fewer columns - simplified insert
         with engine.begin() as conn:
             for _, row in tqdm(df_dates.iterrows(), total=len(df_dates), desc="  Inserting dates"):
                 upsert_query = text("""
                     INSERT INTO dw.dim_date 
-                    (date_id, order_date, year, quarter, month, week, 
-                     day_of_month, day_of_week, month_name, day_name, is_weekend)
-                    VALUES (:date_id, :order_date, :year, :quarter, :month, :week, 
-                            :day_of_month, :day_of_week, :month_name, :day_name, :is_weekend)
-                    ON CONFLICT (date_id)
-                    DO NOTHING
+                    (order_date, year, month, day)
+                    VALUES (:order_date, :year, :month, :day)
+                    ON CONFLICT (date_key) DO NOTHING
                 """)
                 
                 try:
                     conn.execute(
                         upsert_query,
                         {
-                            "date_id": int(row["date_id"]),
                             "order_date": row["order_date"],
                             "year": int(row["year"]),
-                            "quarter": int(row["quarter"]),
                             "month": int(row["month"]),
-                            "week": int(row["week"]),
-                            "day_of_month": int(row["day_of_month"]),
-                            "day_of_week": int(row["day_of_week"]),
-                            "month_name": row["month_name"],
-                            "day_name": row["day_name"],
-                            "is_weekend": int(row["is_weekend"]),
+                            "day": int(row["day_of_month"])
                         }
                     )
                     insert_count += 1
                 except (SQLAlchemyError, IntegrityError, ValueError) as e:
-                    log(f"  ⚠️  Error inserting date {row['date_id']}: {e}", "WARNING")
+                    log(f"  ⚠️  Error inserting date {row['order_date']}: {e}", "WARNING")
         
         log(f"✅ dim_date: {insert_count:,} inserted", "INFO")
         
-        lookup_dict = dict(zip(df_dates["order_date"], df_dates["date_id"]))
+        # Get actual date_key from database after insert
+        with engine.connect() as conn:
+            df_date_lookup = pd.read_sql_query(
+                "SELECT order_date, date_key FROM dw.dim_date", conn
+            )
+        
+        lookup_dict = dict(zip(df_date_lookup["order_date"], df_date_lookup["date_key"]))
         log(f"  📌 Date lookup dict: {len(lookup_dict)} entries", "INFO")
         
         return lookup_dict
@@ -406,8 +403,9 @@ def populate_fact_orders(engine, customer_lookup, geography_lookup, product_look
         query = """
             SELECT 
                 stg.order_id, stg.order_item_id, stg.customer_id, stg.market,
-                stg.order_region, stg.customer_country, stg.customer_state, stg.customer_city,
-                stg.product_card_id, stg.order_date, stg.sales, stg.benefit_per_order,
+                stg.order_region, stg.customer_country,
+                stg.product_card_id, stg."order_date_(dateorders)" as order_date, 
+                stg.sales, stg.benefit_per_order,
                 stg.order_item_quantity, stg.order_item_total, stg.order_item_profit_ratio,
                 stg.late_delivery_risk, stg.days_for_shipping_real, stg.days_for_shipment_scheduled,
                 stg.delivery_status, stg.order_item_discount_rate
@@ -425,14 +423,13 @@ def populate_fact_orders(engine, customer_lookup, geography_lookup, product_look
             log("  ⚠️  No unprocessed orders found. Skipping fact population.", "WARNING")
             return {"total_orders": 0, "inserted": 0, "skipped": 0}
         
-        df_facts["customer_key"] = df_facts["customer_id"].map(customer_lookup)
+        df_facts["customer_key"] = df_facts["customer_id"].astype(str).map(customer_lookup)
         df_facts["geography_key"] = df_facts.apply(
             lambda row: geography_lookup.get(
-                (row["market"], row["order_region"], row["customer_country"], 
-                 row["customer_state"], row["customer_city"])
+                (row["market"], row["order_region"], row["customer_country"])
             ), axis=1
         )
-        df_facts["product_key"] = df_facts["product_card_id"].map(product_lookup)
+        df_facts["product_key"] = df_facts["product_card_id"].astype(str).map(product_lookup)
         
         # Map date_key with proper datetime handling
         df_facts["date_key"] = pd.to_datetime(df_facts["order_date"], errors="coerce").map(date_lookup)
@@ -464,7 +461,7 @@ def populate_fact_orders(engine, customer_lookup, geography_lookup, product_look
         
         # Validate numeric fields
         numeric_fields = ["sales", "benefit_per_order", "order_item_total", 
-                         "order_item_profit_ratio", "order_item_discount_rate"]
+                        "order_item_profit_ratio", "order_item_discount_rate"]
         for field in numeric_fields:
             df_facts_valid[field] = pd.to_numeric(df_facts_valid[field], errors="coerce").fillna(0)
         
