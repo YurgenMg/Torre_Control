@@ -5,7 +5,7 @@
 
 BEGIN;
 
--- 1. Populate dim_customer (3 columnas: customer_id, fname, lname, segment)
+-- 1. Populate dim_customer (CORREGIDO: usa customer_id para dedup)
 INSERT INTO dw.dim_customer (customer_id, fname, lname, segment)
 SELECT DISTINCT
     customer_id::VARCHAR,
@@ -14,10 +14,9 @@ SELECT DISTINCT
     customer_segment
 FROM dw.stg_raw_orders
 WHERE customer_id IS NOT NULL
-ON CONFLICT (customer_key) DO NOTHING;
+ON CONFLICT (customer_id) DO NOTHING;
 
--- 2. Populate dim_geography (ya tiene datos, verificar)
--- Revisar si necesita más registros
+-- 2. Populate dim_geography (CORREGIDO: usa combo único market+region+country)
 INSERT INTO dw.dim_geography (market, region, country)
 SELECT DISTINCT
     market,
@@ -27,9 +26,9 @@ FROM dw.stg_raw_orders
 WHERE market IS NOT NULL
     AND order_region IS NOT NULL
     AND customer_country IS NOT NULL
-ON CONFLICT (geo_key) DO NOTHING;
+ON CONFLICT (market, region, country) DO NOTHING;
 
--- 3. Populate dim_product (3 columnas: product_id, product_name, category)
+-- 3. Populate dim_product (CORREGIDO: usa product_id para dedup)
 INSERT INTO dw.dim_product (product_id, product_name, category)
 SELECT DISTINCT
     product_card_id::VARCHAR,
@@ -37,7 +36,7 @@ SELECT DISTINCT
     category_name
 FROM dw.stg_raw_orders
 WHERE product_card_id IS NOT NULL
-ON CONFLICT (product_key) DO NOTHING;
+ON CONFLICT (product_id) DO NOTHING;
 
 -- 4. dim_date ya tiene datos (1127 registros)
 
