@@ -1,0 +1,21 @@
+relationship a263f8c9-c2ca-4a56-9a19-a3dc90e52d79
+	joinOnDateBehavior: datePartOnly
+	fromColumn: dim_date.order_date
+	toColumn: LocalDateTable_e333d742-4684-4e14-9013-3b17e0447724.Date
+
+relationship AutoDetected_d824ee5e-9e9d-49c9-82bf-4073b2f30765
+	fromColumn: fact_orders.customer_key
+	toColumn: dim_customers.customer_key
+
+relationship AutoDetected_b4c033b6-f849-46c1-b6e7-08c7814e11cb
+	fromColumn: fact_orders.date_key
+	toColumn: dim_date.date_key
+
+relationship AutoDetected_d35ebdee-93bb-4268-8ebd-f02174eb5e00
+	fromColumn: fact_orders.geo_key
+	toColumn: dim_geography.geo_key
+
+relationship AutoDetected_d813d96e-2f4d-46e9-b29e-1d7af8a1d509
+	fromColumn: fact_orders.product_key
+	toColumn: dim_product.product_key
+

@@ -1,0 +1,48 @@
+table dim_geography
+	lineageTag: e8023d42-450f-4652-90f0-fea1be2db307
+
+	column geo_key
+		dataType: int64
+		formatString: 0
+		lineageTag: 2c47131a-e5b6-4775-b902-40bbf12de82e
+		summarizeBy: none
+		sourceColumn: geo_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column market
+		dataType: string
+		lineageTag: e2f26699-6381-4279-8b0d-9f9413a440a0
+		summarizeBy: none
+		sourceColumn: market
+
+		annotation SummarizationSetBy = Automatic
+
+	column region
+		dataType: string
+		lineageTag: 01021672-d5fc-45dc-8e41-336706a58f34
+		summarizeBy: none
+		sourceColumn: region
+
+		annotation SummarizationSetBy = Automatic
+
+	column country
+		dataType: string
+		lineageTag: 5cba3148-2a37-4683-bfaf-486bd8e67b76
+		summarizeBy: none
+		sourceColumn: country
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_geography = m
+		mode: import
+		source =
+				let
+				    Origen = Parquet.Document(File.Contents("C:\Users\USUARIO\Documents\Yurgenpersonal\Tripleten\Portafolio\Proyecto_TorreContol\Data\Processed\dim_geography.parquet"), [Compression=null, LegacyColumnNameEncoding=false, MaxDepth=null])
+				in
+				    Origen
+
+	annotation PBI_NavigationStepName = Navegación
+
+	annotation PBI_ResultType = Table
+

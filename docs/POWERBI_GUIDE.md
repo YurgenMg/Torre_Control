@@ -164,84 +164,221 @@ Follow the same relationship structure as Option 1 above.
 
 ---
 
-## 📊 Building Your First Dashboard
+## 📊 Building Your Dashboard (Best Practices)
 
-### Key Measures to Create
+### 🏗️ Architecture: Executive vs. Operational Views
 
-#### 1. OTIF Percentage
+#### Landing Page (Executive View)
+**Purpose:** High-level KPIs for decision-makers  
+**Design Principle:** Menos es Más - Limitar objetos visuales para mejor rendimiento
+
+**Structure:**
+1. **KPI Cards (Top Row)** - 4 tarjetas principales con tendencias
+2. **Main Chart** - Vista macro de OTIF% over time
+3. **Geographic Overview** - Map con drill-down capability
+4. **Hidden Filters** - Use Bookmarks to toggle visibility
+
+#### Drill-Through Pages (Operational View)
+**Purpose:** Detailed analysis for operational teams  
+**Access:** Right-click on data point → "Drill Through"
+
+---
+
+### 📈 Key Measures with DAX Best Practices
+
+#### 1. OTIF Percentage (Using VAR for Performance)
 
 ```dax
 OTIF % = 
-DIVIDE(
+VAR OnTimeOrders = 
     CALCULATE(
         COUNTROWS(fact_orders),
         fact_orders[is_late] = FALSE,
         fact_orders[is_complete] = TRUE,
         fact_orders[is_canceled] = FALSE
-    ),
+    )
+VAR TotalValidOrders = 
     CALCULATE(
         COUNTROWS(fact_orders),
         fact_orders[is_canceled] = FALSE
-    ),
-    0
-) * 100
+    )
+RETURN
+    DIVIDE(OnTimeOrders, TotalValidOrders, 0) * 100
 ```
 
-#### 2. Revenue at Risk
+**Why VAR?** Mejora rendimiento al calcular expresiones una sola vez.
+
+#### 2. Revenue at Risk (Explicit Measure)
 
 ```dax
 Revenue at Risk = 
-CALCULATE(
-    SUM(fact_orders[sales]),
-    fact_orders[is_late] = TRUE
-)
+VAR LateOrders = 
+    FILTER(
+        fact_orders,
+        fact_orders[is_late] = TRUE
+    )
+RETURN
+    SUMX(LateOrders, fact_orders[sales])
 ```
 
-#### 3. Total Sales
+#### 3. Total Sales (Never use implicit measures!)
 
 ```dax
 Total Sales = SUM(fact_orders[sales])
 ```
 
-#### 4. Average Delay Days
+#### 4. Average Delay Days (Handle BLANKs correctly)
 
 ```dax
 Avg Delay Days = 
+-- No convertir BLANKs a 0 artificialmente
 AVERAGE(fact_orders[delay_days])
 ```
 
-#### 5. Order Count
+#### 5. Order Count (Distinct count for accuracy)
 
 ```dax
-Order Count = 
-DISTINCTCOUNT(fact_orders[order_id])
+Order Count = DISTINCTCOUNT(fact_orders[order_id])
 ```
 
-### Recommended Visualizations
+#### 6. Churn Rate (For Customer Analysis)
 
-#### Page 1: Executive Overview
-- **KPI Card:** OTIF %
-- **KPI Card:** Total Sales
-- **KPI Card:** Revenue at Risk
-- **Line Chart:** Sales trend by date (dim_date[full_date])
-- **Map:** OTIF % by geography (dim_geography[order_city])
+```dax
+Churn Rate % = 
+VAR TotalCustomers = DISTINCTCOUNT(fact_orders[customer_id])
+VAR ChurnedCustomers = 
+    CALCULATE(
+        DISTINCTCOUNT(fact_orders[customer_id]),
+        fact_orders[has_churned] = TRUE
+    )
+RETURN
+    DIVIDE(ChurnedCustomers, TotalCustomers, 0) * 100
+```
 
-#### Page 2: Geographic Analysis
-- **Map Visual:** Market → Region → City drill-down
-- **Table:** OTIF % by Market and Region
-- **Bar Chart:** Top 10 Cities by Order Volume
-- **Scatter Plot:** OTIF % vs. Sales by Region
+---
 
-#### Page 3: Customer Analysis
-- **Table:** Top 10 Customers by Sales
-- **Pie Chart:** Sales by Customer Segment
-- **Line Chart:** Customer retention trend
-- **Table:** VIP Customers at Risk
+### 🎯 Pro Tip: Calculation Groups for KPI Time Intelligence
 
-#### Page 4: Product Performance
-- **Bar Chart:** Sales by Department
-- **Tree Map:** Sales by Category → Product
-- **Table:** Product profitability analysis
+**Problem:** Creating separate measures for OTIF YTD, OTIF QTD, OTIF MTD is repetitive and clutters your model.
+
+**Solution:** Use **Calculation Groups** to dynamically switch between time calculations:
+
+1. Create Calculation Group: `Time Intelligence`
+2. Add calculation items:
+   - `Current Period`
+   - `YTD` (Year-to-Date)
+   - `QTD` (Quarter-to-Date)
+   - `PY` (Prior Year)
+   - `Growth %`
+
+3. In visual, use a slicer to let users choose the time context dynamically.
+
+**Example Calculation Item (YTD):**
+```dax
+YTD = 
+TOTALYTD(SELECTEDMEASURE(), dim_date[date])
+```
+
+**Benefit:** One measure (`OTIF %`), multiple time contexts without creating 20+ measures.
+
+---
+
+### 🗺️ Recommended Visualizations by Use Case
+
+#### Page 1: Executive Dashboard
+
+| Visual Type | Purpose | Data Setup |
+|-------------|---------|------------|
+| **KPI Card** (x4) | OTIF%, Total Sales, Revenue at Risk, Churn Rate | Add trend sparkline |
+| **Line & Stacked Column Chart** | OTIF% trend + Volume | Line: OTIF%, Bars: Order Count |
+| **Shape Map** (Azure Maps) | Geographic OTIF by Market | Size: Sales, Color: OTIF% (Red=Bad) |
+| **Smart Narrative** | Auto-generated insights | Drag-and-drop visual |
+
+**Interactivity:**
+- Use **Bookmarks** to switch between "Sales View" and "Logistics View"
+- Configure **Tooltips** to show detail on hover without cluttering main view
+
+#### Page 2: Geographic Deep-Dive
+
+| Visual Type | Purpose | Configuration |
+|-------------|---------|--------------|
+| **Shape Map** with Hierarchy | Drill-down Market→Region→City | Enable "Drill mode" |
+| **Matrix** | OTIF% by Market & Region | Conditional formatting: Red <90%, Green >95% |
+| **Decomposition Tree** | Root cause analysis of delays | Start with "Revenue at Risk" |
+
+**Navigation:**
+- Configure **Drill-Through** to "Order Details" page (see below)
+- On map selection, other visuals auto-filter
+
+#### Page 3: Operational - Order Details (Drill-Through Page)
+
+**Setup:**
+1. Create new page, set as **Drill-Through page**
+2. Add `dim_date[date]` to Drill-Through fields
+3. Mark page as **Hidden** (users access via right-click)
+
+| Visual Type | Purpose |
+|-------------|---------|
+| **Matrix** | List of late orders with Order ID, Customer, Days Late |
+| **Bar Chart** | Top carriers with delays |
+| **Back Button** | Return to previous page |
+
+**Why Drill-Through?** Keeps executive view clean while providing operational detail on-demand.
+
+#### Page 4: Customer Risk Analysis
+
+| Visual Type | Purpose | Configuration |
+|-------------|---------|--------------|
+| **Matrix** | VIP customers with consecutive late orders | Sort by `sales_per_customer` DESC |
+| **Scatter Plot** | Customer LTV vs. Late Order % | Identify high-value at-risk customers |
+| **Decomposition Tree** | Churn drivers (by segment, product, region) | Root: Churn Rate % |
+
+**Format Tip:** Use **Conditional Formatting** on the Matrix to highlight revenue >$10K in bold red.
+
+---
+
+### 🎨 Design Best Practices (From Your Notebook)
+
+#### 1. Hierarchy Configuration
+Create geographic hierarchy for drill-down:
+```
+dim_geography
+  └─ Geographic Hierarchy
+      ├─ Market (Level 1)
+      ├─ Region (Level 2)
+      ├─ Country (Level 3)
+      └─ City (Level 4)
+```
+
+**Usage:** Drag hierarchy to visual, enable drill-down button in visual.
+
+#### 2. Limit Visuals Per Page
+**Recommendation:** Max **5-7 visuals** per page to minimize parallel queries and improve load time.
+
+#### 3. Annotations in Presentations
+When exporting to PowerPoint, use **Data Point Annotations** to highlight key insights directly on charts.
+
+#### 4. Modern Tooltips
+Configure **Tooltip Pages** instead of default tooltips:
+- Create a hidden page with detailed breakdown
+- Assign as tooltip for main visual
+- Shows rich context on hover
+
+---
+
+### 🚀 Advanced: Star Schema Optimization Reminders
+
+**Model Checklist:**
+- ✅ Use **numeric surrogate keys** (customer_key, product_key) for relationships (faster than text IDs)
+- ✅ Avoid **bi-directional filtering** unless absolutely necessary (performance killer)
+- ✅ Separate date and time into different columns (reduces cardinality)
+- ✅ Mark `dim_date` as **Date Table** (required for time intelligence functions)
+- ✅ Disable **Auto Date/Time** in settings (use explicit date table instead)
+
+**Relationship Best Practices:**
+- Prefer **One-to-Many (1:*)** relationships
+- Avoid **Many-to-Many (M:M)** if possible (use bridge tables or `TREATAS`)
+- Use **physical relationships** over virtual (better performance)
 
 ---
 
@@ -354,19 +491,89 @@ Prefer measures over calculated columns for better performance.
 
 ---
 
-## 🎯 Success Checklist
+## ⚠️ Common Mistakes to Avoid (Critical)
 
-- [ ] PostgreSQL database running (port 5433)
-- [ ] ETL pipeline executed successfully
-- [ ] Data exported to Parquet format
-- [ ] Power BI Desktop installed
-- [ ] Data model relationships created
-- [ ] dim_date marked as date table
-- [ ] Key measures created (OTIF%, Revenue at Risk, etc.)
-- [ ] Dashboard published to Power BI Service (optional)
+### 1. Publishing Sensitive Data to Web
+❌ **NEVER** use "Publish to Web" for Torre Control dashboards  
+✅ Use Power BI Service with proper access controls or export to PowerPoint for sharing
+
+### 2. Using Auto Date/Time
+❌ Auto date/time creates hidden tables that bloat your model  
+✅ Disable in File → Options → Data Load, use explicit `dim_date` table
+
+### 3. Bi-directional Filtering Everywhere
+❌ Activating cross-filtering on all relationships creates ambiguous paths  
+✅ Use uni-directional (1→*) relationships by default, bi-directional only when necessary
+
+### 4. Implicit Measures
+❌ Dragging numeric columns directly to visuals creates unpredictable implicit measures  
+✅ Always create explicit DAX measures (e.g., `Total Sales = SUM(fact_orders[sales])`)
+
+### 5. Converting BLANKs to Zeros
+❌ Replacing `BLANK()` with 0 degrades performance on large fact tables  
+✅ Let Power BI handle BLANKs naturally (auto-filters them for optimization)
+
+### 6. Not Using Variables (VAR) in DAX
+❌ Repeating the same expression multiple times in a measure  
+✅ Use `VAR` to calculate once and reuse (improves readability and performance)
+
+### 7. Over-using Iterators
+❌ `SUMX` or `FILTER` on entire fact table without pre-filtering  
+✅ Filter first with `CALCULATE`, then iterate over reduced dataset
 
 ---
 
-**🎉 Congratulations!** You've successfully connected Power BI to Torre Control.
+## 🎯 Success Checklist
 
-For questions or issues, refer to the documentation in `docs/` or create a GitHub issue.
+### Data Connection
+- [ ] PostgreSQL database running (port 5433)
+- [ ] ETL pipeline executed successfully
+- [ ] Data exported to Parquet format
+- [ ] Power BI Desktop installed (latest version)
+
+### Data Model Configuration
+- [ ] Data model relationships created (fact_orders → dim_*)
+- [ ] All relationships are **One-to-Many (1:*)**
+- [ ] Bi-directional filtering disabled (unless specifically needed)
+- [ ] `dim_date` marked as Date Table
+- [ ] Numeric surrogate keys used for relationships
+- [ ] Auto Date/Time disabled in settings
+
+### DAX Measures Created
+- [ ] OTIF % (using VAR)
+- [ ] Revenue at Risk
+- [ ] Total Sales (explicit measure)
+- [ ] Churn Rate %
+- [ ] Order Count (DISTINCTCOUNT)
+- [ ] Average Delay Days
+- [ ] All measures use explicit DAX (no implicit measures)
+
+### Dashboard Structure
+- [ ] Landing page (Executive View) with max 5-7 visuals
+- [ ] Geographic hierarchy created (Market→Region→Country→City)
+- [ ] Drill-through page created for operational details
+- [ ] Bookmarks configured for view switching
+- [ ] KPI cards include trend sparklines
+- [ ] Smart Narrative added for auto-insights
+
+### Performance Optimization
+- [ ] Variables (VAR) used in complex DAX measures
+- [ ] Calculation Groups created for time intelligence (optional advanced)
+- [ ] Conditional formatting applied to matrices
+- [ ] Modern tooltips configured
+- [ ] Incremental refresh configured for fact_orders (if >100K rows)
+
+### Publishing & Sharing
+- [ ] Dashboard tested with sample data
+- [ ] Sensitive data NOT published to web
+- [ ] Dashboard published to Power BI Service (optional)
+- [ ] Proper access controls configured
+
+---
+
+**🎉 Congratulations!** Your Torre Control dashboard now follows enterprise-grade Power BI best practices!
+
+For questions or issues, refer to:
+- **Project Documentation:** `docs/` directory
+- **Your Power BI Notebook:** 54 sources with advanced techniques
+- **GitHub Issues:** [Torre Control Repository](https://github.com/YurgenMg/Torre_Control)

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "Torre_Control_v0.1"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "29796df7-3af8-4196-9379-7ec21f99d1ad"
+  }
+}

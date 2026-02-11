@@ -1,0 +1,67 @@
+table dim_date
+	lineageTag: 36768c5e-2cce-403a-8fbd-ea43297cae4d
+
+	column date_key
+		dataType: int64
+		formatString: 0
+		lineageTag: 2a6b03ab-f49c-4a85-8849-860976b6ae89
+		summarizeBy: none
+		sourceColumn: date_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column order_date
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 612d44c5-2158-4a48-ac86-c49c5681682a
+		summarizeBy: none
+		sourceColumn: order_date
+
+		variation Variación
+			isDefault
+			relationship: a263f8c9-c2ca-4a56-9a19-a3dc90e52d79
+			defaultHierarchy: LocalDateTable_e333d742-4684-4e14-9013-3b17e0447724.'Jerarquía de fechas'
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column year
+		dataType: int64
+		formatString: 0
+		lineageTag: 1cf446d7-9689-46f4-be6f-3e434d9e3da9
+		summarizeBy: sum
+		sourceColumn: year
+
+		annotation SummarizationSetBy = Automatic
+
+	column month
+		dataType: int64
+		formatString: 0
+		lineageTag: e37de500-4902-4e5c-b259-8da56c6fe5e7
+		summarizeBy: sum
+		sourceColumn: month
+
+		annotation SummarizationSetBy = Automatic
+
+	column day
+		dataType: int64
+		formatString: 0
+		lineageTag: 97289c61-616a-4d07-ad4d-3c449ccd25e1
+		summarizeBy: sum
+		sourceColumn: day
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_date = m
+		mode: import
+		source =
+				let
+				    Origen = Parquet.Document(File.Contents("C:\Users\USUARIO\Documents\Yurgenpersonal\Tripleten\Portafolio\Proyecto_TorreContol\Data\Processed\dim_date.parquet"), [Compression=null, LegacyColumnNameEncoding=false, MaxDepth=null])
+				in
+				    Origen
+
+	annotation PBI_NavigationStepName = Navegación
+
+	annotation PBI_ResultType = Table
+

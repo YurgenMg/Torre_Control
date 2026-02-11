@@ -1,0 +1,87 @@
+table fact_orders
+	lineageTag: 7cc01a0d-68cc-4ee9-a27f-5e6d8ef571e6
+
+	column order_key
+		dataType: int64
+		formatString: 0
+		lineageTag: cd12bdeb-f100-4404-9ab9-711369ac1612
+		summarizeBy: sum
+		sourceColumn: order_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column order_id
+		dataType: string
+		lineageTag: 1d1472c9-2477-4c0d-be2f-2c6ad42e182f
+		summarizeBy: none
+		sourceColumn: order_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column date_key
+		dataType: int64
+		formatString: 0
+		lineageTag: abe6e835-7b38-451b-93b9-7e86571693ef
+		summarizeBy: none
+		sourceColumn: date_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column customer_key
+		dataType: int64
+		formatString: 0
+		lineageTag: 75cb82e3-abf5-49d2-95f3-3afeea97bb34
+		summarizeBy: none
+		sourceColumn: customer_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column product_key
+		dataType: int64
+		formatString: 0
+		lineageTag: d3c2aec7-0856-47f2-bc66-1375037a63b9
+		summarizeBy: none
+		sourceColumn: product_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column geo_key
+		dataType: int64
+		formatString: 0
+		lineageTag: c9dea891-faf5-47eb-adbd-d062035a5b7f
+		summarizeBy: none
+		sourceColumn: geo_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column sales
+		dataType: double
+		lineageTag: d8357f7f-65fc-4ea2-96a8-30a37962e16e
+		summarizeBy: sum
+		sourceColumn: sales
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column late_delivery_risk
+		dataType: int64
+		formatString: 0
+		lineageTag: d1c749cc-09c6-4db8-8b20-f390af8e5897
+		summarizeBy: sum
+		sourceColumn: late_delivery_risk
+
+		annotation SummarizationSetBy = Automatic
+
+	partition fact_orders = m
+		mode: import
+		source =
+				let
+				    Origen = Parquet.Document(File.Contents("C:\Users\USUARIO\Documents\Yurgenpersonal\Tripleten\Portafolio\Proyecto_TorreContol\Data\Processed\fact_orders.parquet"), [Compression=null, LegacyColumnNameEncoding=false, MaxDepth=null])
+				in
+				    Origen
+
+	annotation PBI_NavigationStepName = Navegación
+
+	annotation PBI_ResultType = Table
+

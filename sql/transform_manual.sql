@@ -21,7 +21,7 @@ SELECT DISTINCT
     customer_segment as segment
 FROM dw.stg_raw_orders
 WHERE customer_id IS NOT NULL
-  AND customer_id NOT IN (SELECT customer_id FROM dw.dim_customer WHERE customer_id IS NOT NULL);
+  AND customer_id::VARCHAR NOT IN (SELECT customer_id FROM dw.dim_customer WHERE customer_id IS NOT NULL);
 
 -- ---------------------------------------------------------------------------
 -- 2. POBLAR dim_geography (Jerarquía Market → Region → Country)
@@ -60,7 +60,7 @@ SELECT DISTINCT
     category_name as category
 FROM dw.stg_raw_orders
 WHERE product_card_id IS NOT NULL
-  AND product_card_id NOT IN (SELECT product_id FROM dw.dim_product WHERE product_id IS NOT NULL);
+  AND product_card_id::VARCHAR NOT IN (SELECT product_id FROM dw.dim_product WHERE product_id IS NOT NULL);
 
 -- ---------------------------------------------------------------------------
 -- 4. POBLAR dim_date (Dimensión calendario)
@@ -72,13 +72,13 @@ INSERT INTO dw.dim_date (
     day
 )
 SELECT DISTINCT
-    order_date,
-    EXTRACT(YEAR FROM order_date)::INTEGER as year,
-    EXTRACT(MONTH FROM order_date)::INTEGER as month,
-    EXTRACT(DAY FROM order_date)::INTEGER as day
-FROM dw.stg_raw_orders
-WHERE order_date IS NOT NULL
-  AND order_date NOT IN (SELECT order_date FROM dw.dim_date);
+    s."order_date_(dateorders)"::DATE as order_date,
+    EXTRACT(YEAR FROM s."order_date_(dateorders)"::DATE)::INTEGER as year,
+    EXTRACT(MONTH FROM s."order_date_(dateorders)"::DATE)::INTEGER as month,
+    EXTRACT(DAY FROM s."order_date_(dateorders)"::DATE)::INTEGER as day
+FROM dw.stg_raw_orders s
+WHERE s."order_date_(dateorders)" IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM dw.dim_date d WHERE d.order_date = s."order_date_(dateorders)"::DATE);
 
 -- ---------------------------------------------------------------------------
 -- 5. POBLAR fact_orders (Tabla de hechos - Transacciones)
@@ -93,31 +93,31 @@ INSERT INTO dw.fact_orders (
     late_delivery_risk
 )
 SELECT
-    s.order_id,
+    s.order_id::VARCHAR as order_id,
     d.date_key,
     c.customer_key,
     p.product_key,
     g.geo_key,
-    COALESCE(s.sales, 0) as sales,
+    COALESCE(s.sales::NUMERIC, 0) as sales,
     COALESCE(s.late_delivery_risk, 0) as late_delivery_risk
 FROM dw.stg_raw_orders s
-INNER JOIN dw.dim_customer c ON s.customer_id = c.customer_id
-INNER JOIN dw.dim_product p ON s.product_card_id = p.product_id
+INNER JOIN dw.dim_customer c ON s.customer_id::VARCHAR = c.customer_id::VARCHAR
+INNER JOIN dw.dim_product p ON s.product_card_id::VARCHAR = p.product_id::VARCHAR
 INNER JOIN dw.dim_geography g ON (
     s.market = g.market AND
     s.order_region = g.region AND
     s.order_country = g.country
 )
-INNER JOIN dw.dim_date d ON s.order_date = d.order_date
+INNER JOIN dw.dim_date d ON s."order_date_(dateorders)"::DATE = d.order_date
 WHERE s.order_id IS NOT NULL
   AND s.customer_id IS NOT NULL
   AND s.product_card_id IS NOT NULL
-  AND NOT EXISTS (SELECT 1 FROM dw.fact_orders f WHERE f.order_id = s.order_id);
+  AND NOT EXISTS (SELECT 1 FROM dw.fact_orders f WHERE f.order_id = s.order_id::VARCHAR);
 
 -- ---------------------------------------------------------------------------
--- Marcar staging como procesado
+-- Marcar staging como procesado (opcional - campo no existe en esta versión)
 -- ---------------------------------------------------------------------------
-UPDATE dw.stg_raw_orders SET is_processed = TRUE;
+-- UPDATE dw.stg_raw_orders SET is_processed = TRUE;
 
 COMMIT;
 

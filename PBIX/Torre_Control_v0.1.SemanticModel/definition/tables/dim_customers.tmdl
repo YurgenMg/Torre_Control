@@ -1,0 +1,56 @@
+table dim_customers
+	lineageTag: eba00822-2473-44dd-bc6e-81284e3ce6aa
+
+	column customer_key
+		dataType: int64
+		formatString: 0
+		lineageTag: 50da3718-7add-4e13-98bf-7cea5e2f47cb
+		summarizeBy: none
+		sourceColumn: customer_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column customer_id
+		dataType: string
+		lineageTag: 94937493-a606-4710-b7fe-af5aad2b36fd
+		summarizeBy: none
+		sourceColumn: customer_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column fname
+		dataType: string
+		lineageTag: 5e239bdc-c387-4942-a6ce-9f01a88e17ae
+		summarizeBy: none
+		sourceColumn: fname
+
+		annotation SummarizationSetBy = Automatic
+
+	column lname
+		dataType: string
+		lineageTag: a9c68047-b1a6-4e8f-827a-1c19b04390bc
+		summarizeBy: none
+		sourceColumn: lname
+
+		annotation SummarizationSetBy = Automatic
+
+	column segment
+		dataType: string
+		lineageTag: f6b4ce20-cac8-42ac-8625-213958942cf5
+		summarizeBy: none
+		sourceColumn: segment
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_customers = m
+		mode: import
+		source =
+				let
+				    Origen = Parquet.Document(File.Contents("C:\Users\USUARIO\Documents\Yurgenpersonal\Tripleten\Portafolio\Proyecto_TorreContol\Data\Processed\dim_customer.parquet"), [Compression=null, LegacyColumnNameEncoding=false, MaxDepth=null])
+				in
+				    Origen
+
+	annotation PBI_NavigationStepName = Navegación
+
+	annotation PBI_ResultType = Table
+
